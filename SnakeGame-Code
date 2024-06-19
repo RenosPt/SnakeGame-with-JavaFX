@@ -1,0 +1,439 @@
+import javafx.animation.Animation;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
+import javafx.application.Application;
+import javafx.scene.Scene;
+import javafx.scene.control.Button;
+import javafx.scene.control.Label;
+import javafx.scene.layout.Pane;
+import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
+import javafx.scene.paint.Color;
+import javafx.scene.shape.Circle;
+import javafx.scene.shape.Rectangle;
+import javafx.stage.Stage;
+import javafx.util.Duration;
+
+import java.util.ArrayList;
+import java.util.Random;
+import javafx.geometry.Pos;
+
+public class SnakeGame extends Application {
+
+    private static final int TILE_SIZE = 20;
+    private static final int WIDTH = 30;
+    private static final int HEIGHT = 30;
+    private static final int SPEED = 200;
+    private static final int INITIAL_LIVES = 3;
+    private static final int VERTICAL_SPEED = 90;
+    private static final int HORIZONTAL_SPEED = 90;
+    private static final int FOOD_SIZE = 8;
+
+    private int x = 10; //The initial coordinates of the snake's head (starting at position 10, 10)
+    private int y = 10;
+    private int dx = 0;
+    private int dy = 0;
+    private int lives = INITIAL_LIVES;
+    private int points = 0;
+
+    private Pane root; //The main container for the game scene
+    private ArrayList<Rectangle> snakeBody;
+    private Rectangle[] obstacles;
+    private Rectangle[] verticalObstacles;
+    private Rectangle[] horizontalObstacles;
+    private Label livesLabel;
+    private Label pointsLabel;
+    private Circle food;
+
+    private Timeline timeline;
+    private boolean inCooldown = false;
+    private boolean[] horizontalRight;
+    private boolean[] verticalDown;
+    private Timeline[] verticalTimelines; //Array that holds a timer for the movement of vertical obstacles.
+    private Timeline[] horizontalTimelines;
+
+    private void resetGameState() {
+        x = 10;
+        y = 10;
+        dx = 0;
+        dy = 0;
+        lives = INITIAL_LIVES;
+        points = 0;
+    }
+
+    @Override
+    public void start(Stage primaryStage) {
+        Button startButton = new Button("Start");
+        startButton.setOnAction(event -> {
+            resetGameState(); //Resets the game state and starts the game when clicked
+            startGame(primaryStage);
+        });
+        startButton.setPrefSize(100, 50); // Set preferred width and height
+        Button exitButton = new Button("Exit");
+        exitButton.setPrefSize(100, 50); // Set preferred width and height
+        startButton.setStyle("-fx-font-size: 20px;");
+        exitButton.setStyle("-fx-font-size: 20px;");
+
+        startButton.setOnAction(event -> {
+            startGame(primaryStage);
+        });
+
+        exitButton.setOnAction(event -> {
+            primaryStage.close();
+        });
+
+        VBox vbox = new VBox(10); //Creates a vertical box (VBox) layout with a spacing of 10 pixels between the elements
+        vbox.getChildren().addAll(startButton, exitButton);
+        vbox.setAlignment(javafx.geometry.Pos.CENTER);
+
+        StackPane root = new StackPane();
+        root.getChildren().add(vbox);
+        root.setStyle("-fx-background-color: green;"); // Set background color to green
+
+        Scene scene = new Scene(root, 400, 400);
+
+        primaryStage.setTitle("Snake Game");
+        primaryStage.setScene(scene);
+        primaryStage.show();
+    }
+
+    private void startGame(Stage primaryStage) {
+        x = 10;
+        y = 10;
+        dx = 0;
+        dy = 0;
+
+        root = new Pane(); //Creates a new Pane to hold all the game elements
+        Scene scene = new Scene(root, WIDTH * TILE_SIZE, HEIGHT * TILE_SIZE);
+
+        snakeBody = new ArrayList<>();
+        snakeBody.add(new Rectangle(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE));
+        snakeBody.get(0).setFill(Color.GREEN);
+        root.getChildren().add(snakeBody.get(0));
+
+        obstacles = new Rectangle[13]; //initializes an array of Rectangle objects to represent obstacles in the game
+        for (int i = 0; i < obstacles.length; i++) {
+            obstacles[i] = new Rectangle(TILE_SIZE * getRandomX(), TILE_SIZE * getRandomY(), TILE_SIZE, TILE_SIZE);
+            obstacles[i].setFill(Color.RED);
+            root.getChildren().add(obstacles[i]);
+        }
+
+        verticalObstacles = new Rectangle[3];
+        for (int i = 0; i < verticalObstacles.length; i++) {
+            verticalObstacles[i] = new Rectangle(TILE_SIZE * getRandomX(), TILE_SIZE * getRandomY(), TILE_SIZE, TILE_SIZE);
+            verticalObstacles[i].setFill(Color.BLUE);
+            root.getChildren().add(verticalObstacles[i]);
+        }
+
+        horizontalObstacles = new Rectangle[3];
+        for (int i = 0; i < horizontalObstacles.length; i++) {
+            horizontalObstacles[i] = new Rectangle(TILE_SIZE * getRandomX(), TILE_SIZE * getRandomY(), TILE_SIZE, TILE_SIZE);
+            horizontalObstacles[i].setFill(Color.YELLOW);
+            root.getChildren().add(horizontalObstacles[i]);
+        }
+
+        livesLabel = new Label("Lives: " + lives);
+        updateLivesLabelColor();
+        livesLabel.setTranslateX(10);
+        livesLabel.setTranslateY(10);
+        livesLabel.setStyle("-fx-font-size: 16px;");
+        root.getChildren().add(livesLabel);
+
+        pointsLabel = new Label("Points: " + points);
+        pointsLabel.setTranslateX(10);
+        pointsLabel.setTranslateY(30);
+        pointsLabel.setStyle("-fx-font-size: 16px;");
+        root.getChildren().add(pointsLabel);
+
+        food = new Circle(FOOD_SIZE);
+        food.setFill(Color.ORANGE);
+        root.getChildren().add(food);
+        spawnFood();
+
+        scene.setOnKeyPressed(e -> { // snake movement with keyboard arrows
+            switch (e.getCode()) {
+                case UP:
+                    if (dy == 0) {
+                        dx = 0;
+                        dy = -1;
+                    }
+                    break;
+                case DOWN:
+                    if (dy == 0) {
+                        dx = 0;
+                        dy = 1;
+                    }
+                    break;
+                case LEFT:
+                    if (dx == 0) {
+                        dx = -1;
+                        dy = 0;
+                    }
+                    break;
+                case RIGHT:
+                    if (dx == 0) {
+                        dx = 1;
+                        dy = 0;
+                    }
+                    break;
+            }
+        });
+
+        primaryStage.setScene(scene);
+
+        timeline = new Timeline(new KeyFrame(Duration.millis(SPEED), event -> {
+            moveSnake();
+            checkCollision(primaryStage);
+        }));
+        timeline.setCycleCount(Animation.INDEFINITE);
+        timeline.play();
+
+        horizontalRight = new boolean[horizontalObstacles.length];
+        verticalDown = new boolean[verticalObstacles.length];
+        verticalTimelines = new Timeline[verticalObstacles.length];
+        horizontalTimelines = new Timeline[horizontalObstacles.length];
+
+        for (int i = 0; i < verticalObstacles.length; i++) {
+            int index = i;
+            verticalTimelines[i] = new Timeline(new KeyFrame(Duration.millis(1000 / VERTICAL_SPEED), event -> {
+                if (verticalDown[index]) {
+                    verticalObstacles[index].setY(verticalObstacles[index].getY() + 1);
+                    if (verticalObstacles[index].getY() + TILE_SIZE >= HEIGHT * TILE_SIZE) {
+                        verticalDown[index] = false;
+                    }
+                } else {
+                    verticalObstacles[index].setY(verticalObstacles[index].getY() - 1);
+                    if (verticalObstacles[index].getY() <= 0) {
+                        verticalDown[index] = true;
+                    }
+                }
+            }));
+            verticalTimelines[i].setCycleCount(Animation.INDEFINITE);
+            verticalTimelines[i].play();
+        }
+
+        for (int i = 0; i < horizontalObstacles.length; i++) {
+            int index = i;
+            horizontalTimelines[i] = new Timeline(new KeyFrame(Duration.millis(1000 / HORIZONTAL_SPEED), event -> {
+                if (horizontalRight[index]) {
+                    horizontalObstacles[index].setX(horizontalObstacles[index].getX() + 1);
+                    if (horizontalObstacles[index].getX() + TILE_SIZE >= WIDTH * TILE_SIZE) {
+                        horizontalRight[index] = false;
+                    }
+                } else {
+                    horizontalObstacles[index].setX(horizontalObstacles[index].getX() - 1);
+                    if (horizontalObstacles[index].getX() <= 0) {
+                        horizontalRight[index] = true;
+                    }
+                }
+            }));
+            horizontalTimelines[i].setCycleCount(Animation.INDEFINITE);
+            horizontalTimelines[i].play();
+        }
+
+        primaryStage.setTitle("Snake Game");
+        primaryStage.show();
+    }
+
+
+    private int getRandomX() {
+        return new Random().nextInt(WIDTH);
+    }
+
+    private int getRandomY() {
+        return new Random().nextInt(HEIGHT);
+    }
+
+    private void moveSnake() {
+        x += dx;
+        y += dy;
+        Rectangle newHead = new Rectangle(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        newHead.setFill(Color.GREEN); //create snake's head
+        snakeBody.add(0, newHead);
+        root.getChildren().add(newHead);
+        if (snakeBody.size() > 1) {
+            root.getChildren().remove(snakeBody.remove(snakeBody.size() - 1));
+        }
+    }
+
+    void checkCollision(Stage primaryStage) {
+        boolean collisionOccurred = false;
+
+        for (Rectangle obstacle : obstacles) {
+            if (snakeBody.get(0).getBoundsInParent().intersects(obstacle.getBoundsInParent()) && !inCooldown) {
+                lives--;
+                livesLabel.setText("Lives: " + lives);
+                updateLivesLabelColor();
+                if (lives <= 0) {
+                    gameOver(primaryStage);
+                } else {
+                    startCooldown();
+                    collisionOccurred = true;
+                }
+            }
+        }
+
+        for (Rectangle verticalObstacle : verticalObstacles) {
+            if (snakeBody.get(0).getBoundsInParent().intersects(verticalObstacle.getBoundsInParent()) && !inCooldown) {
+                lives--;
+                livesLabel.setText("Lives: " + lives);
+                updateLivesLabelColor();
+                if (lives <= 0) {
+                    gameOver(primaryStage);
+                } else {
+                    startCooldown();
+                    collisionOccurred = true;
+                }
+            }
+        }
+
+        for (Rectangle horizontalObstacle : horizontalObstacles) {
+            if (snakeBody.get(0).getBoundsInParent().intersects(horizontalObstacle.getBoundsInParent()) && !inCooldown) {
+                lives--;
+                livesLabel.setText("Lives: " + lives);
+                updateLivesLabelColor();
+                if (lives <= 0) {
+                    gameOver(primaryStage);
+                } else {
+                    startCooldown();
+                    collisionOccurred = true;
+                }
+            }
+        }
+
+        if (snakeBody.get(0).getBoundsInParent().intersects(food.getBoundsInParent())) {
+            root.getChildren().remove(food);
+            spawnFood();
+            growSnake();
+            points++;
+            pointsLabel.setText("Points: " + points);
+        }
+
+        if (collisionOccurred) {
+            relocateStableObstacles();
+        }
+
+        if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT) {
+            gameOver(primaryStage);
+        }
+    }
+
+    private void spawnFood() {
+        root.getChildren().remove(food); // Remove the food if it already exists in the root
+        int maxWidth = (WIDTH - 1) * TILE_SIZE;
+        int maxHeight = (HEIGHT - 1) * TILE_SIZE;
+        int foodX, foodY;
+        Random random = new Random();
+        do {
+            foodX = random.nextInt(WIDTH) * TILE_SIZE;
+            foodY = random.nextInt(HEIGHT) * TILE_SIZE;
+        } while (isCollidingWithObstacle(foodX, foodY) || (foodX == 0 && foodY == 0));
+        food.setCenterX(foodX + TILE_SIZE / 2);
+        food.setCenterY(foodY + TILE_SIZE / 2);
+        root.getChildren().add(food);
+    }
+
+    private boolean isCollidingWithObstacle(int x, int y) {
+        for (Rectangle obstacle : obstacles) {
+            if (obstacle.getBoundsInParent().intersects(x, y, TILE_SIZE, TILE_SIZE)) {
+                return true;
+            }
+        }
+        for (Rectangle verticalObstacle : verticalObstacles) {
+            if (verticalObstacle.getBoundsInParent().intersects(x, y, TILE_SIZE, TILE_SIZE)) {
+                return true;
+            }
+        }
+        for (Rectangle horizontalObstacle : horizontalObstacles) {
+            if (horizontalObstacle.getBoundsInParent().intersects(x, y, TILE_SIZE, TILE_SIZE)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+
+
+
+    private void relocateStableObstacles() {
+        for (Rectangle obstacle : obstacles) {
+            obstacle.relocate(TILE_SIZE * getRandomX(), TILE_SIZE * getRandomY());
+        }
+    }
+
+    private void startCooldown() {
+        inCooldown = true;
+        Timeline cooldownTimeline = new Timeline(new KeyFrame(Duration.seconds(1), event -> {
+            inCooldown = false;
+        }));
+        cooldownTimeline.setDelay(Duration.seconds(1));
+        cooldownTimeline.setOnFinished(event -> inCooldown = false);
+        cooldownTimeline.play();
+    }
+
+    private void gameOver(Stage primaryStage) {
+        timeline.stop();
+        root.getChildren().clear(); // Clear all nodes from the root pane
+
+        // Stop and reset vertical obstacles timelines
+        for (Timeline timeline : verticalTimelines) {
+            timeline.stop();
+        }
+
+        // Stop and reset horizontal obstacles timelines
+        for (Timeline timeline : horizontalTimelines) {
+            timeline.stop();
+        }
+
+        Label gameOverLabel = new Label("Game Over");
+        gameOverLabel.setStyle("-fx-font-size: 36px;"); // Set font size
+
+        Button tryAgainButton = new Button("Try Again");
+        tryAgainButton.setStyle("-fx-font-size: 24px;"); // Set font size to 24px
+        tryAgainButton.setPrefSize(150, 60); // Set preferred width and height
+        tryAgainButton.setOnAction(event -> {
+            primaryStage.close(); // Close the current window
+            start(new Stage()); // Start a new game by launching a new window
+        });
+
+        Label scoreLabel = new Label("Score: " + points);
+        scoreLabel.setStyle("-fx-font-size: 24px;"); // Set font size to 24px
+
+        VBox container = new VBox(20); // Vertical box to hold game over elements
+        container.getChildren().addAll(gameOverLabel, tryAgainButton, scoreLabel); // Add children to the container
+        container.setAlignment(Pos.CENTER); // Set the alignment to center
+
+        StackPane gameOverRoot = new StackPane();
+        gameOverRoot.getChildren().add(container); // Add the container to the StackPane
+        gameOverRoot.setStyle("-fx-background-color: green;"); // Set background color to green
+        gameOverRoot.setAlignment(Pos.CENTER); // Align the StackPane to the center
+
+        Scene gameOverScene = new Scene(gameOverRoot, WIDTH * TILE_SIZE, HEIGHT * TILE_SIZE); // Create a new scene with the same size
+        primaryStage.setScene(gameOverScene); // Set the new scene to the stage
+
+        // Reset points and lives
+        points = 0;
+        lives = INITIAL_LIVES;
+    }
+
+    
+    private void updateLivesLabelColor() {
+        if (lives == 1) {
+            livesLabel.setTextFill(Color.RED);
+        } else {
+            livesLabel.setTextFill(Color.BLACK);
+        }
+    }
+
+    private void growSnake() {
+        Rectangle tail = snakeBody.get(snakeBody.size() - 1);
+        Rectangle newSegment = new Rectangle(tail.getX(), tail.getY(), tail.getWidth(), tail.getHeight());
+        newSegment.setFill(Color.GREEN);
+        snakeBody.add(newSegment);
+        root.getChildren().add(newSegment);
+    }
+
+    public static void main(String[] args) {
+        launch(args);
+    }
+}
