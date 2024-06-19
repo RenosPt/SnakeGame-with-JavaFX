@@ -14,4 +14,5 @@ The second scene is the main screen where you play the game.
 The last scene appears when you lose which shows a text that says 'Game Over', the score you did and a 'try again' button which restarts the game.
 
 Feel free to use the code and make some changes if you want to.
+
 Have fun!
